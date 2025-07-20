@@ -9,7 +9,7 @@ import { Checkbox } from '../components/ui/checkbox'
 import { Slider } from '../components/ui/slider'
 import { useCart } from '../hooks/useCart'
 import { toast } from 'sonner'
-import { mockProducts } from '../data/products'
+import { productService, type Product } from '../services/database'
 
 export default function ShopPage() {
   const [searchParams] = useSearchParams()
@@ -21,39 +21,53 @@ export default function ShopPage() {
   const searchQuery = searchParams.get('search') || ''
   const categoryFilter = searchParams.get('category') || ''
 
-  const [filteredProducts, setFilteredProducts] = useState(mockProducts)
+  const [products, setProducts] = useState<Product[]>([])
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
 
+  // Load products from database
   useEffect(() => {
-    let filtered = mockProducts
+    const loadProducts = async () => {
+      try {
+        setLoading(true)
+        let loadedProducts: Product[]
 
-    // Filter by search query
-    if (searchQuery) {
-      filtered = filtered.filter(product =>
-        product.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.seller.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+        if (searchQuery) {
+          loadedProducts = await productService.search(searchQuery)
+        } else if (categoryFilter) {
+          loadedProducts = await productService.getByCategory(categoryFilter)
+        } else {
+          loadedProducts = await productService.getAll()
+        }
+
+        setProducts(loadedProducts)
+        setFilteredProducts(loadedProducts)
+      } catch (error) {
+        console.error('Error loading products:', error)
+        toast.error('Failed to load products')
+      } finally {
+        setLoading(false)
+      }
     }
 
-    // Filter by category
-    if (categoryFilter) {
-      filtered = filtered.filter(product => product.category === categoryFilter)
-    }
+    loadProducts()
+  }, [searchQuery, categoryFilter])
 
-    // Filter by price range
-    filtered = filtered.filter(product => 
+  // Apply price filter
+  useEffect(() => {
+    const filtered = products.filter(product => 
       product.price >= priceRange[0] && product.price <= priceRange[1]
     )
-
     setFilteredProducts(filtered)
-  }, [searchQuery, categoryFilter, priceRange])
+  }, [products, priceRange])
 
-  const handleAddToCart = (product: any) => {
+  const handleAddToCart = (product: Product) => {
     addToCart({
       id: product.id,
       title: product.title,
       price: product.price,
-      image: product.image,
-      seller: product.seller
+      image: product.image || '',
+      seller: product.sellerName || 'Unknown Seller'
     })
     toast.success('Added to cart!')
   }
@@ -81,7 +95,7 @@ export default function ShopPage() {
                  categoryFilter ? categoryFilter : 'All items'}
               </h1>
               <p className="text-gray-600 mt-1">
-                {filteredProducts.length} results
+                {loading ? 'Loading...' : `${filteredProducts.length} results`}
               </p>
             </div>
             
@@ -192,7 +206,11 @@ export default function ShopPage() {
 
           {/* Products Grid */}
           <main className="flex-1">
-            {filteredProducts.length === 0 ? (
+            {loading ? (
+              <div className="text-center py-12">
+                <p className="text-gray-500 text-lg">Loading products...</p>
+              </div>
+            ) : filteredProducts.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-gray-500 text-lg">No products found matching your criteria.</p>
                 <Button variant="outline" className="mt-4" onClick={() => window.location.href = '/shop'}>
@@ -213,7 +231,7 @@ export default function ShopPage() {
                       viewMode === 'list' ? 'w-48 h-48' : 'aspect-square'
                     }`}>
                       <img
-                        src={product.image}
+                        src={product.image || '/placeholder-image.jpg'}
                         alt={product.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
@@ -224,9 +242,9 @@ export default function ShopPage() {
                       >
                         <Heart className="h-4 w-4" />
                       </Button>
-                      {product.badge && (
-                        <Badge className="absolute top-2 left-2 bg-[#F16521] text-white">
-                          {product.badge}
+                      {product.price >= 35 && (
+                        <Badge className="absolute top-2 left-2 bg-[#00A693] text-white">
+                          FREE shipping
                         </Badge>
                       )}
                     </div>
@@ -240,13 +258,13 @@ export default function ShopPage() {
                       
                       <div className="flex items-center space-x-1 mb-2">
                         <Star className="h-4 w-4 text-yellow-400 fill-current" />
-                        <span className="text-sm font-medium">{product.rating}</span>
-                        <span className="text-sm text-gray-500">({product.reviews})</span>
+                        <span className="text-sm font-medium">{product.rating || 0}</span>
+                        <span className="text-sm text-gray-500">({product.reviewCount || 0})</span>
                       </div>
                       
-                      <p className="text-sm text-gray-600 mb-3">{product.seller}</p>
+                      <p className="text-sm text-gray-600 mb-3">{product.sellerName}</p>
                       
-                      {product.freeShipping && (
+                      {product.price >= 35 && (
                         <p className="text-sm text-[#00A693] font-medium mb-2">FREE shipping</p>
                       )}
                       
@@ -255,11 +273,6 @@ export default function ShopPage() {
                           <span className="text-lg font-bold text-gray-900">
                             ${product.price}
                           </span>
-                          {product.originalPrice && (
-                            <span className="text-sm text-gray-500 line-through">
-                              ${product.originalPrice}
-                            </span>
-                          )}
                         </div>
                         <Button
                           size="sm"

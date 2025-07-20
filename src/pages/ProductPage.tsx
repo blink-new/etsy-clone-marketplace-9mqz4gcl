@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Star, Heart, Share2, ChevronLeft, ChevronRight, Truck, Shield, RotateCcw } from 'lucide-react'
 import { Button } from '../components/ui/button'
@@ -8,15 +8,44 @@ import { Separator } from '../components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar'
 import { useCart } from '../hooks/useCart'
 import { toast } from 'sonner'
-import { mockProducts } from '../data/products'
+import { productService, type Product } from '../services/database'
 
 export default function ProductPage() {
   const { id } = useParams()
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [quantity, setQuantity] = useState(1)
+  const [product, setProduct] = useState<Product | null>(null)
+  const [loading, setLoading] = useState(true)
   const { addToCart } = useCart()
 
-  const product = mockProducts.find(p => p.id === id)
+  useEffect(() => {
+    const loadProduct = async () => {
+      if (!id) return
+      
+      try {
+        setLoading(true)
+        const productData = await productService.getById(id)
+        setProduct(productData)
+      } catch (error) {
+        console.error('Error loading product:', error)
+        toast.error('Failed to load product')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadProduct()
+  }, [id])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg text-gray-600">Loading product...</p>
+        </div>
+      </div>
+    )
+  }
 
   if (!product) {
     return (
@@ -33,10 +62,10 @@ export default function ProductPage() {
 
   // Mock additional images for gallery
   const images = [
-    product.image,
-    product.image.replace('w=400', 'w=500'),
-    product.image.replace('h=400', 'h=500'),
-    product.image.replace('fit=crop', 'fit=cover')
+    product.image || '/placeholder-image.jpg',
+    (product.image || '/placeholder-image.jpg').replace('w=400', 'w=500'),
+    (product.image || '/placeholder-image.jpg').replace('h=400', 'h=500'),
+    (product.image || '/placeholder-image.jpg').replace('fit=crop', 'fit=cover')
   ]
 
   const handleAddToCart = () => {
@@ -45,8 +74,8 @@ export default function ProductPage() {
         id: product.id,
         title: product.title,
         price: product.price,
-        image: product.image,
-        seller: product.seller
+        image: product.image || '',
+        seller: product.sellerName || 'Unknown Seller'
       })
     }
     toast.success(`Added ${quantity} item(s) to cart!`)
@@ -157,21 +186,18 @@ export default function ProductPage() {
               <div className="flex items-center space-x-4 mb-4">
                 <div className="flex items-center space-x-1">
                   <Star className="h-5 w-5 text-yellow-400 fill-current" />
-                  <span className="font-medium">{product.rating}</span>
-                  <span className="text-gray-500">({product.reviews} reviews)</span>
+                  <span className="font-medium">{product.rating || 0}</span>
+                  <span className="text-gray-500">({product.reviewCount || 0} reviews)</span>
                 </div>
                 <Separator orientation="vertical" className="h-4" />
-                <span className="text-gray-600">{product.reviews} sales</span>
+                <span className="text-gray-600">{product.reviewCount || 0} sales</span>
               </div>
 
               <div className="flex items-center space-x-3 mb-6">
                 <span className="text-3xl font-bold text-gray-900">${product.price}</span>
-                {product.originalPrice && (
-                  <span className="text-xl text-gray-500 line-through">${product.originalPrice}</span>
-                )}
               </div>
 
-              {product.freeShipping && (
+              {product.price >= 35 && (
                 <div className="flex items-center space-x-2 text-[#00A693] mb-4">
                   <Truck className="h-4 w-4" />
                   <span className="font-medium">FREE shipping</span>
@@ -185,11 +211,11 @@ export default function ProductPage() {
             <div className="flex items-center space-x-3">
               <Avatar>
                 <AvatarImage src={`https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop&crop=face`} />
-                <AvatarFallback>{product.seller[0]}</AvatarFallback>
+                <AvatarFallback>{(product.sellerName || 'U')[0]}</AvatarFallback>
               </Avatar>
               <div>
-                <p className="font-medium text-gray-900">{product.seller}</p>
-                <p className="text-sm text-gray-600">Star Seller • 1,234 sales</p>
+                <p className="font-medium text-gray-900">{product.sellerName}</p>
+                <p className="text-sm text-gray-600">Star Seller • {product.reviewCount || 0} sales</p>
               </div>
               <Button variant="outline" size="sm" className="ml-auto">
                 Contact shop
@@ -315,7 +341,7 @@ export default function ProductPage() {
               ))}
               
               <Button variant="outline" className="w-full">
-                See all {product.reviews} reviews
+                See all {product.reviewCount || 0} reviews
               </Button>
             </div>
           </div>

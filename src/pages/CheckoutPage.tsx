@@ -1,6 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useCart } from '../hooks/useCart'
 import { useNavigate } from 'react-router-dom'
+import { orderService } from '../services/database'
+import { blink } from '../lib/blink'
+import { toast } from 'sonner'
 
 interface CheckoutForm {
   email: string
@@ -27,6 +30,7 @@ const CheckoutPage: React.FC = () => {
   const navigate = useNavigate()
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentStep, setCurrentStep] = useState(1)
+  const [user, setUser] = useState<any>(null)
   
   const [form, setForm] = useState<CheckoutForm>({
     email: '',
@@ -52,6 +56,14 @@ const CheckoutPage: React.FC = () => {
   const shipping = total > 35 ? 0 : 5.99
   const tax = total * 0.08
   const finalTotal = total + shipping + tax
+
+  // Get user authentication state
+  useEffect(() => {
+    const unsubscribe = blink.auth.onAuthStateChanged((state) => {
+      setUser(state.user)
+    })
+    return unsubscribe
+  }, [])
 
   const validateStep = (step: number): boolean => {
     const newErrors: Partial<CheckoutForm> = {}
@@ -104,21 +116,56 @@ const CheckoutPage: React.FC = () => {
     e.preventDefault()
     
     if (!validateStep(2)) return
+    if (!user) {
+      toast.error('Please sign in to complete your order')
+      return
+    }
 
     setIsProcessing(true)
     
-    // Simulate payment processing
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    
-    // Clear cart and redirect to success page
-    clearCart()
-    navigate('/order-success', { 
-      state: { 
-        orderNumber: `ETY-${Date.now()}`,
-        total: finalTotal,
-        email: form.email 
-      }
-    })
+    try {
+      // Simulate payment processing
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      // Create order in database
+      const shippingAddress = `${form.address}, ${form.city}, ${form.state} ${form.zipCode}`
+      const billingAddress = shippingAddress // Using same address for billing
+      
+      const orderItems = items.map(item => ({
+        productId: item.id,
+        quantity: item.quantity,
+        price: item.price
+      }))
+
+      const order = await orderService.createOrder({
+        userId: user.id,
+        items: orderItems,
+        shippingAddress,
+        billingAddress,
+        paymentMethod: form.paymentMethod,
+        totalAmount: finalTotal,
+        shippingCost: shipping,
+        taxAmount: tax
+      })
+
+      // Clear cart and redirect to success page
+      clearCart()
+      navigate('/order-success', { 
+        state: { 
+          orderNumber: order.orderNumber,
+          total: finalTotal,
+          email: form.email,
+          orderId: order.id
+        }
+      })
+      
+      toast.success('Order placed successfully!')
+    } catch (error) {
+      console.error('Error creating order:', error)
+      toast.error('Failed to place order. Please try again.')
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   if (items.length === 0) {
